@@ -311,7 +311,9 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className={`font-bold truncate ${word.isLearned ? 'text-emerald-600' : (index === currentWordIndex ? 'text-indigo-900' : 'text-slate-700')}`}>{word.korean}</p>
+                        <p className={`font-bold truncate ${word.isLearned ? 'text-emerald-600' : (index === currentWordIndex ? 'text-indigo-900' : 'text-slate-700')}`}>
+                          {word.korean}{word.standardDicts?.[0]?.sup_no && word.standardDicts[0].sup_no !== '0' && <sup className="ml-0.5 text-[0.6em] font-medium text-indigo-400/80">{word.standardDicts[0].sup_no}</sup>}
+                        </p>
                         {word.isLearned && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                         {word.hanja && !word.isLearned && <span className="text-xs text-slate-400 shrink-0">{word.hanja}</span>}
                       </div>

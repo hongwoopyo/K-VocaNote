@@ -95,6 +95,10 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
     }
   };
 
+  const allCategories = useMemo(() => {
+    return Array.from(new Set(word.standardDicts?.[0]?.senses?.[0]?.categories || [])).filter(Boolean);
+  }, [word]);
+
   // Prepare data for the chart with specific color logic and jittering for visibility
   const chartData = useMemo(() => {
     // 표제어 색상
@@ -164,6 +168,10 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
     return data;
   }, [word]);
 
+  const mainDict = word.standardDicts?.[0];
+  const stdHomonyms = word.standardDicts?.slice(1, 6) || [];
+  const showLegacyHomonyms = stdHomonyms.length === 0 && word.otherHomonyms && word.otherHomonyms.length > 0;
+
   return (
     <div className="w-full max-w-4xl mx-auto perspective-1000 h-full cursor-pointer group relative" onClick={() => setIsFlipped(!isFlipped)}>
       <div className={`relative w-full h-full transition-all duration-500 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
@@ -182,6 +190,11 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
           </div>
 
           <div className="absolute top-6 right-6 text-slate-400 flex items-center gap-2">
+            {allCategories.length > 0 && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-500 border border-indigo-100 shadow-sm whitespace-nowrap">
+                {allCategories.join(', ')}
+              </span>
+            )}
             <span className="text-sm font-medium uppercase tracking-wider">{word.partOfSpeech}</span>
             <RotateCw className="w-4 h-4" />
           </div>
@@ -191,7 +204,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
             <div className="flex flex-col items-center mb-6">
               <div className="flex items-center gap-4">
                 <h2 className={`text-6xl md:text-8xl font-black text-center serif tracking-tight break-keep ${word.isLearned ? 'text-emerald-600' : 'text-indigo-600'}`}>
-                  {word.korean}
+                  {word.korean}{word.standardDicts?.[0]?.sup_no && word.standardDicts[0].sup_no !== '0' && <sup className="ml-1 text-[0.5em] font-medium text-indigo-400/80">{word.standardDicts[0].sup_no}</sup>}
                 </h2>
                 <button 
                   onClick={(e) => playAudio(e, word.korean)}
@@ -254,7 +267,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
             <div>
               <div className="flex items-baseline gap-3 flex-wrap">
                 <h3 className={`text-2xl md:text-3xl font-bold serif ${word.isLearned ? 'text-emerald-600' : 'text-indigo-600'}`}>
-                  {word.korean}
+                  {word.korean}{word.standardDicts?.[0]?.sup_no && word.standardDicts[0].sup_no !== '0' && <sup className="ml-0.5 text-[0.6em] font-medium text-indigo-400/80">{word.standardDicts[0].sup_no}</sup>}
                 </h3>
                 <span className="text-lg md:text-xl text-slate-400 font-mono">{word.pronunciation}</span>
                 {word.hanja && <span className="text-lg md:text-xl text-slate-400 font-serif border-l border-slate-300 pl-3">{word.hanja}</span>}
@@ -493,7 +506,7 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
                            <div className={`w-1.5 h-1.5 rounded-full ${word.isLearned ? 'bg-emerald-500' : 'bg-indigo-500'}`}></div> Current
                         </td>
                         <td className={`px-4 py-3 font-bold text-lg ${word.isLearned ? 'text-emerald-700' : 'text-indigo-700'}`}>
-                          {word.korean}
+                          {word.korean}{word.standardDicts?.[0]?.sup_no && word.standardDicts[0].sup_no !== '0' && <sup className="ml-0.5 text-[0.6em] font-medium text-indigo-400/80">{word.standardDicts[0].sup_no}</sup>}
                         </td>
                       </tr>
 
@@ -519,28 +532,45 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
               </div>
             )}
 
-            {word.otherHomonyms && word.otherHomonyms.length > 0 && (
-              <div className="pt-4 border-t border-slate-100 pb-8">
-                <div className="flex items-center gap-2 mb-3 text-amber-500">
-                  <ArrowRightLeft className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Other Meanings (Homonyms)</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {word.otherHomonyms.map((homonymDef, idx) => (
-                    <button
-                      key={idx}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectHomonym(homonymDef);
-                      }}
-                      className="text-left px-3 py-2 rounded bg-white hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition-all text-sm text-slate-600 flex items-start gap-2 group/btn shadow-sm"
-                    >
-                      <BookType className="w-4 h-4 mt-0.5 text-slate-400 group-hover/btn:text-amber-500" />
-                      <span>{homonymDef}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+{stdHomonyms.length > 0 && (
+               <div className="pt-4 border-t border-slate-100 pb-8">       
+                 <div className="flex items-center justify-between mb-3">  
+                   <div className="flex items-center gap-2 text-indigo-600">
+                     <BookType className="w-5 h-5 text-indigo-400" />      
+                     <span className="text-sm font-bold uppercase tracking-wider">동음이의어 (표준국어대사전)</span>
+                   </div>
+                 </div>
+                 <div className="flex flex-col gap-2">
+                   {stdHomonyms.map((homo, idx) => (
+                     <button
+                       key={idx}
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         onSelectHomonym(homo.senses?.[0]?.definition || homo.word);
+                       }}
+                       className="text-left w-full p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 transition-all group flex flex-col gap-1.5 shadow-sm"
+                     >
+                       <div className="flex flex-wrap items-center gap-2"> 
+                          <span className="text-slate-800 font-serif font-black text-lg group-hover:text-indigo-600 flex items-center">
+                            {homo.word}{homo.sup_no && homo.sup_no !== '0' && <sup className="ml-0.5 text-[0.6em] font-medium text-indigo-400 group-hover:text-indigo-500">{homo.sup_no}</sup>}
+                         </span>
+                         {homo.pos && (
+                           <span className="bg-slate-100 text-slate-500 text-xs px-1.5 py-0.5 rounded shadow-sm">{homo.pos}</span>
+                         )}
+                         {homo.senses?.[0]?.categories?.[0] && (
+                           <span className="bg-indigo-50 text-indigo-500 text-xs px-1.5 py-0.5 rounded shadow-sm border border-indigo-100">{homo.senses[0].categories[0]}</span>
+                         )}
+                         {homo.origin && (
+                            <span className="bg-slate-100 text-slate-500 text-xs px-1.5 py-0.5 rounded shadow-sm">{homo.origin}</span>
+                         )}
+                       </div>
+                       <div className="text-sm text-slate-500 line-clamp-2 leading-relaxed group-hover:text-indigo-500">
+                         {homo.senses?.[0]?.definition}
+                       </div>
+                     </button>
+                   ))}
+                 </div>
+               </div>
             )}
           </div>
         </div>

@@ -8,6 +8,24 @@ export interface PolitenessWord {
   level: number; // 0.1 to 2.0 for honorifics
 }
 
+export interface StandardDictSense {
+  definition: string;
+  pattern: string;
+  grammar: string;
+  categories?: string[];
+  examples: string[];
+}
+
+export interface StandardDictInfo {
+  word: string;
+  sup_no?: string;
+  origin: string;
+  pronunciation: string;
+  pos: string;
+  conjugation: string;
+  senses: StandardDictSense[];
+}
+
 export interface Word {
   id: string;
   korean: string;
@@ -31,6 +49,7 @@ export interface Word {
   hyponyms?: string[];
   relatedWords?: string[];
   officialInfo?: OfficialInfo[];
+  standardDicts?: StandardDictInfo[];
 }
 
 export interface Language {

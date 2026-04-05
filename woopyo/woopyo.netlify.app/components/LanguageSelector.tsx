@@ -111,19 +111,35 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ onSelect }) 
           </div>
         </div>
 
-        {/* 이메일 문의 푸터 (우측 하단 배치) */}
-        <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
-          <div className="bg-white/90 backdrop-blur p-3 md:p-4 rounded-2xl shadow-lg shadow-indigo-900/5 border border-slate-100 text-[10px] md:text-xs text-slate-500 font-medium whitespace-nowrap">
-            <div className="flex flex-col gap-1.5 text-right">
-              <p className="text-slate-700">
-                <span className="font-bold text-indigo-400 mr-1.5">사업 및 학습 문의:</span> 
-                <a href="mailto:hongwoopyo@gmail.com" className="hover:text-indigo-600 transition-colors">hongwoopyo@gmail.com</a>
+        {/* 하단 푸터 영역 (라이선스, 저작물 출처, 연락처 정보 통합) */}
+        <div className="w-full max-w-5xl mt-8 pt-6 border-t border-slate-200/60 pb-4">
+          <div className="flex flex-col md:flex-row justify-between items-center md:items-start gap-6 px-4 md:px-6">
+            
+            {/* 왼쪽: 저작권 및 라이선스 정보 */}
+            <div className="flex-1 text-[10px] md:text-xs text-slate-500 font-medium leading-relaxed text-center md:text-left break-keep">
+              <p className="mb-1.5">
+                본 사이트의 표준국어대사전 자료는 <span className="font-bold text-slate-600">'크리에이티브 커먼즈 저작자표시-동일조건변경허락 2.0 대한민국 라이선스'</span>에 의해 보호받습니다.
               </p>
               <p>
-                <span className="font-bold text-slate-400 mr-1.5">에러 문의:</span> 
-                <a href="mailto:imriotheduck@gmail.com" className="hover:text-indigo-600 transition-colors">imriotheduck@gmail.com</a>
+                본 저작물은 국립국어원에서 2003년 작성하여 공공누리 제1유형으로 개방한 한국어 학습용 어휘 목록을 이용하였으며, 해당 저작물은 국립국어원 홈페이지에서 무료로 다운받으실 수 있습니다.
               </p>
             </div>
+            
+            {/* 오른쪽: 문의 이메일 정보 */}
+            <div className="flex-shrink-0 bg-slate-50/80 rounded-xl p-3 md:p-4 border border-slate-100/80 text-[10px] md:text-xs font-medium w-full md:w-auto text-center md:text-right">
+              <div className="flex flex-col gap-2">
+                <p className="text-slate-600 flex justify-between md:justify-end gap-3 md:gap-2 items-center">
+                  <span className="font-bold text-indigo-400">사업 및 학습 문의</span> 
+                  <a href="mailto:hongwoopyo@gmail.com" className="text-slate-500 hover:text-indigo-600 transition-colors">hongwoopyo@gmail.com</a>
+                </p>
+                <div className="h-px w-full bg-slate-200/50 my-0.5"></div>
+                <p className="text-slate-600 flex justify-between md:justify-end gap-3 md:gap-2 items-center">
+                  <span className="font-bold text-slate-400">시스템 에러 문의</span> 
+                  <a href="mailto:imriotheduck@gmail.com" className="text-slate-500 hover:text-indigo-600 transition-colors">imriotheduck@gmail.com</a>
+                </p>
+              </div>
+            </div>
+            
           </div>
         </div>
 

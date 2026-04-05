@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import xlsx from 'xlsx';
 import { fileURLToPath } from 'url';
+import { parseStringPromise } from 'xml2js'; // 표준국어대사전 파싱용
 
 dotenv.config();
 
@@ -46,6 +47,95 @@ const vocabMap = new Map();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const modelId = 'gemini-3.1-flash-lite-preview';
+
+// 국립국어원 표준국어대사전 조회 헬퍼 함수
+async function fetchKoreanDictInfo(query) {
+  try {
+    const DICT_KEY = process.env.KOREAN_DICT_API_KEY;
+    if (!DICT_KEY) return null;
+
+    const searchUrl = `https://stdict.korean.go.kr/api/search.do?key=${DICT_KEY}&req_type=json&q=${encodeURIComponent(query)}&advanced=y&method=exact`;
+    const searchRes = await fetch(searchUrl);
+    const searchText = await searchRes.text();
+    if (!searchText.trim()) return [];
+
+    const searchData = JSON.parse(searchText);
+    let items = searchData?.channel?.item;
+    if (!items || items.length === 0) return [];
+    
+    // items가 배열이 아니면 배열로 만들고, 동음이의어가 너무 많을 수 있으니 최대 4개까지만 제한
+    let itemArray = Array.isArray(items) ? items : [items];
+    itemArray = itemArray.slice(0, 4);
+
+    const results = [];
+    
+    for (const item of itemArray) {
+      const targetCode = item.target_code;
+      const viewUrl = `https://stdict.korean.go.kr/api/view.do?key=${DICT_KEY}&method=TARGET_CODE&q=${targetCode}`;
+      const viewRes = await fetch(viewUrl);
+      const viewXmlText = await viewRes.text();
+      if (!viewXmlText.trim()) continue;
+
+      const viewData = await parseStringPromise(viewXmlText, { explicitArray: false, ignoreAttrs: true });
+      const wordInfo = viewData?.channel?.item?.word_info;
+      if (!wordInfo) continue;
+
+      let posInfoArray = wordInfo.pos_info;
+      if (posInfoArray && !Array.isArray(posInfoArray)) posInfoArray = [posInfoArray];
+
+      let allSenses = [];
+      let mainPos = "";
+
+      if (posInfoArray) {
+        mainPos = posInfoArray[0].pos || "";
+        posInfoArray.forEach(posItem => {
+          let commPatternArray = posItem.comm_pattern_info;
+          if (commPatternArray && !Array.isArray(commPatternArray)) commPatternArray = [commPatternArray];
+          if (commPatternArray) {
+            commPatternArray.forEach(commPattern => {
+              let sensesArray = commPattern.sense_info;
+              if (sensesArray && !Array.isArray(sensesArray)) sensesArray = [sensesArray];
+              if (sensesArray) {
+                sensesArray.forEach(sense => {
+                  let examples = sense.example_info;
+                  if (examples && !Array.isArray(examples)) examples = [examples];
+
+                  let catArray = sense.cat_info;
+                  if (catArray && !Array.isArray(catArray)) catArray = [catArray];
+                  const categories = catArray ? catArray.map(c => (typeof c.cat === 'string' ? c.cat : (c.cat?._ || "")).trim()).filter(Boolean) : [];
+
+                  allSenses.push({
+                    definition: typeof sense.definition === 'string' ? sense.definition : (sense.definition?._ || ""),
+                    pattern: sense.syntactic_annotation || "",
+                    grammar: sense.grammar_info || "",
+                    categories: categories,
+                    // 용례를 최대 2개로 제한
+                    examples: examples ? examples.map(ex => typeof ex.example === 'string' ? ex.example : (ex.example?._ || "")).slice(0, 2) : []
+                  });
+                });
+              }
+            });
+          }
+        });
+      }
+
+      results.push({
+        word: (wordInfo.word || "").trim(),
+        sup_no: item.sup_no || "",
+        origin: wordInfo.original_language_info ? (wordInfo.original_language_info.original_language || "").trim() : "", 
+        pronunciation: wordInfo.pronunciation_info ? (Array.isArray(wordInfo.pronunciation_info) ? wordInfo.pronunciation_info[0].pronunciation : wordInfo.pronunciation_info.pronunciation).trim() : "", 
+        pos: (mainPos || "").trim(),
+        conjugation: wordInfo.conju_info ? (Array.isArray(wordInfo.conju_info) ? wordInfo.conju_info.map(c => c.conjugation).join(', ') : wordInfo.conju_info.conjugation).trim() : "", 
+        senses: allSenses
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.error("fetchKoreanDictInfo error:", err);
+    return [];
+  }
+}
 
 // 단어 검색 엔드포인트
 app.post('/api/lookupWord', async (req, res) => {
@@ -261,7 +351,148 @@ app.post('/api/lookupWord', async (req, res) => {
     // 프론트엔드에는 필요 없는 판별용 임시 필드 삭제
     delete parsedData.selectedOfficialRank;
 
-    // 최종 데이터 응답 전송
+    // 최종 데이터 응답 전송 전에 표준국어대사전 정보도 함께 첨부 (korean 필드 기반 매칭)
+    let stdDictInfos = await fetchKoreanDictInfo(parsedData.korean);
+    
+    // AI 생성 의미와 가장 잘 맞는 표준국어대사전 항목 찾기, 공식 어휘 매칭, 그리고 동음이의어 번역
+    const officialCandidates = vocabularyData.filter(v => v.rawWord && v.rawWord.replace(/[0-9]/g, '') === parsedData.korean);
+    let matchedOfficialRank = parsedData.selectedOfficialRank || null;
+
+    if (stdDictInfos && stdDictInfos.length > 0) {
+      // 이제 표제어(homonym)뿐만 아니라 개별 뜻풀이(sense)까지 모두 평탄화하여 AI에 전달
+      const sensesToProcess = [];
+      stdDictInfos.forEach((info, hIdx) => {
+        if (info.senses) {
+          info.senses.forEach((sense, sIdx) => {
+            if (sense.definition) {
+              sensesToProcess.push({
+                hIdx: hIdx,
+                sIdx: sIdx,
+                word: info.word,
+                sup_no: info.sup_no || "",
+                meaning: sense.definition
+              });
+            }
+          });
+        }
+      });
+
+      if (sensesToProcess.length > 0 || officialCandidates.length > 1) {
+        const offOptions = officialCandidates.map(c => ({
+          id: c.rank,
+          pos: c.pos,
+          meaning: c.meaning
+        }));
+        
+         const transPrompt = `
+You are a professional translator and language matcher.
+We have an AI-generated definition for a Korean word.
+AI Generated English Definition: "${parsedData.definition}"
+AI Generated ${targetLanguageName} Translation: "${parsedData.translation}"
+Context Hint (if any): "${contextHint || 'None'}"
+
+Here are the specific dictionary senses (뜻풀이) for "${parsedData.korean}":
+${JSON.stringify(sensesToProcess)}
+
+Here are the Official Vocabulary Candidates for "${parsedData.korean}":
+${JSON.stringify(offOptions)}
+
+Task 1: Identify which dictionary sense (meaning) best matches the AI generated definition. Return its "hIdx" and "sIdx". (Return 0 for both if unsure).
+Task 2: Translate ALL of the Korean dictionary sense meanings into ${targetLanguageName}. Keep the precise meaning.
+Task 3: Identify which "id" from the Official Vocabulary Candidates best matches the AI generated definition. Return an empty string "" if none match or if array is empty.
+
+Provide the output strictly in JSON format matching this schema:
+{
+  "bestMatchHIdx": number,
+  "bestMatchSIdx": number,
+  "bestOfficialRank": "string",
+  "translations": [
+    { "hIdx": number, "sIdx": number, "translatedMeaning": "string" }
+  ]
+}
+        `;
+        try {
+          const transSchema = {
+            type: Type.OBJECT,
+            properties: {
+              bestMatchHIdx: { type: Type.NUMBER },
+              bestMatchSIdx: { type: Type.NUMBER },
+              bestOfficialRank: { type: Type.STRING },
+              translations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    hIdx: { type: Type.NUMBER },
+                    sIdx: { type: Type.NUMBER },
+                    translatedMeaning: { type: Type.STRING }
+                  },
+                  required: ['hIdx', 'sIdx', 'translatedMeaning']
+                }
+              }
+            },
+            required: ['bestMatchHIdx', 'bestMatchSIdx', 'translations']
+          };
+          const transModel = genAI.getGenerativeModel({ model: modelId });
+          const transResponse = await transModel.generateContent({
+            contents: [{ role: 'user', parts: [{ text: transPrompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: transSchema,
+              temperature: 0.1,
+            }
+          });
+          const transParsed = JSON.parse(transResponse.response.text());
+          
+          transParsed.translations.forEach(t => {
+            if (stdDictInfos[t.hIdx] && stdDictInfos[t.hIdx].senses && stdDictInfos[t.hIdx].senses[t.sIdx]) {
+              stdDictInfos[t.hIdx].senses[t.sIdx].definition = t.translatedMeaning;
+            }
+          });
+
+          // 선택된 가장 정확한 뜻(Sense)을 해당 동음이의어(Homonym) 배열 안에서 최상단[0]으로 올립니다.
+          if (transParsed.bestMatchHIdx !== undefined && transParsed.bestMatchSIdx !== undefined) {
+             const hIdx = transParsed.bestMatchHIdx;
+             const sIdx = transParsed.bestMatchSIdx;
+             
+             if (stdDictInfos[hIdx] && stdDictInfos[hIdx].senses && stdDictInfos[hIdx].senses.length > sIdx) {
+                const matchedSense = stdDictInfos[hIdx].senses.splice(sIdx, 1)[0];
+                stdDictInfos[hIdx].senses.unshift(matchedSense);
+             }
+             // 그런 다음, 그 최적의 뜻(Sense)을 가지고 있는 동음이의어(Homonym) 자체를 최상단[0]으로 올립니다.
+             if (hIdx > 0 && hIdx < stdDictInfos.length) {
+                const matchedHomonym = stdDictInfos.splice(hIdx, 1)[0];
+                stdDictInfos.unshift(matchedHomonym);
+             }
+          }
+
+          if (transParsed.bestOfficialRank) {
+            matchedOfficialRank = transParsed.bestOfficialRank;
+          }
+
+        } catch (e) {
+          console.error("Homonym matching and translation failed:", e);
+        }
+      }
+    }
+
+    // 최종적으로 Official Info 확정
+    if (officialCandidates.length === 1) {
+      parsedData.officialInfo = [officialCandidates[0]];
+    } else if (matchedOfficialRank) {
+      const match = officialCandidates.find(c => c.rank === matchedOfficialRank);
+      if (match) {
+        parsedData.officialInfo = [match];
+      }
+    }
+
+    parsedData.standardDicts = stdDictInfos;
+
+    // 표제어의 한국어 발음 표기를 표준국어대사전 첫 번째 API 기준으로 덮어쓰기
+    if (stdDictInfos && stdDictInfos.length > 0 && stdDictInfos[0].pronunciation) {
+      parsedData.pronunciation = `[${stdDictInfos[0].pronunciation.replace(/\[/g, '').replace(/\]/g, '')}]`;
+    }
+
     res.json({
       id: crypto.randomUUID(),
       isLearned: false,
@@ -366,6 +597,96 @@ app.post('/api/analyzeSentence', async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// 국립국어원 표준국어대사전 프록시 API
+app.get('/api/dictInfo', async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ error: "No query provided" });
+
+    const DICT_KEY = process.env.KOREAN_DICT_API_KEY;
+    if (!DICT_KEY) return res.status(500).json({ error: "Dictionary API key not configured" });
+
+    // 1단계: 검색 API (search.do) 로 target_code 조회
+    const searchUrl = `https://stdict.korean.go.kr/api/search.do?key=${DICT_KEY}&req_type=json&q=${encodeURIComponent(query)}&advanced=y&method=exact`;
+    const searchRes = await fetch(searchUrl);
+    
+    // 결과가 비어있거나 에러일 경우 처리
+    const searchJsonText = await searchRes.text();
+    if (!searchJsonText.trim()) return res.json({ result: null });
+
+    const searchData = JSON.parse(searchJsonText);
+    const items = searchData?.channel?.item;
+    if (!items || items.length === 0) return res.json({ result: null });
+
+    // 첫 번째 단어 아이템의 target_code 추출
+    const targetCode = items[0].target_code;
+
+    // 2단계: 상세 조회 API (view.do) 호출 (XML만 지원됨)
+    const viewUrl = `https://stdict.korean.go.kr/api/view.do?key=${DICT_KEY}&method=TARGET_CODE&q=${targetCode}`;
+    const viewRes = await fetch(viewUrl);
+    const viewXmlText = await viewRes.text();
+    
+    if (!viewXmlText.trim()) return res.json({ result: null });
+
+    // XML 파싱
+    const viewData = await parseStringPromise(viewXmlText, { explicitArray: false, ignoreAttrs: true });
+    
+    const wordInfo = viewData?.channel?.item?.word_info;
+    if (!wordInfo) return res.json({ result: null });
+
+    // pos_info, comm_pattern_info 처리 (배열일 수 있음)
+    let posInfoArray = wordInfo.pos_info;
+    if (posInfoArray && !Array.isArray(posInfoArray)) posInfoArray = [posInfoArray];
+    
+    let allSenses = [];
+    let mainPos = "";
+    
+    if (posInfoArray) {
+      mainPos = posInfoArray[0].pos || "";
+      posInfoArray.forEach(posItem => {
+        let commPatternArray = posItem.comm_pattern_info;
+        if (commPatternArray && !Array.isArray(commPatternArray)) commPatternArray = [commPatternArray];
+        
+        if (commPatternArray) {
+          commPatternArray.forEach(commPattern => {
+            let sensesArray = commPattern.sense_info;
+            if (sensesArray && !Array.isArray(sensesArray)) sensesArray = [sensesArray];
+            
+            if (sensesArray) {
+              sensesArray.forEach(sense => {
+                let examples = sense.example_info;
+                if (examples && !Array.isArray(examples)) examples = [examples];
+                
+                allSenses.push({
+                  definition: typeof sense.definition === 'string' ? sense.definition : (sense.definition?._ || ""),
+                  pattern: sense.syntactic_annotation || "",
+                  grammar: sense.grammar_info || "",
+                  examples: examples ? examples.map(ex => typeof ex.example === 'string' ? ex.example : (ex.example?._ || "")) : []
+                });
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // 필수 정보만 정제해서 묶어줍니다
+    const responseData = {
+      word: wordInfo.word,                // 표제어
+      origin: wordInfo.original_language_info ? wordInfo.original_language_info.original_language : "", // 원어/어원
+      pronunciation: wordInfo.pronunciation_info ? (Array.isArray(wordInfo.pronunciation_info) ? wordInfo.pronunciation_info[0].pronunciation : wordInfo.pronunciation_info.pronunciation) : "", // 발음
+      pos: mainPos,            // 품사
+      conjugation: wordInfo.conju_info ? (Array.isArray(wordInfo.conju_info) ? wordInfo.conju_info.map(c => c.conjugation).join(', ') : wordInfo.conju_info.conjugation) : "", // 활용
+      senses: allSenses                   // 뜻풀이, 문형, 용례 배열
+    };
+
+    res.json({ result: responseData });
+  } catch (err) {
+    console.error("Dictionary API proxy error:", err);
+    res.status(500).json({ error: "Failed to fetch dictionary data" });
+  }
+});
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
