@@ -171,6 +171,36 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
   const mainDict = word.standardDicts?.[0];
   const stdHomonyms = word.standardDicts?.slice(1, 6) || [];
   const showLegacyHomonyms = stdHomonyms.length === 0 && word.otherHomonyms && word.otherHomonyms.length > 0;
+  const isEnglishNative = nativeLanguage.code === 'en' || nativeLanguage.name.toLowerCase().includes('english');
+  const dictPronunciationGuide = useMemo(() => {
+    const dictWord = (mainDict?.word || '').trim();
+    const dictPronunciation = (mainDict?.pronunciation || '').replace(/\[/g, '').replace(/\]/g, '').trim();
+
+    if (!dictPronunciation) return '';
+
+    return dictWord ? `${dictWord}-${dictPronunciation}` : dictPronunciation;
+  }, [mainDict]);
+  const englishLabel = useMemo(() => {
+    const definition = (word.definition || '').trim();
+    if (!definition) return '';
+
+    const boldMatch = definition.match(/\*\*(.*?)\*\*/);
+    if (boldMatch?.[1]) return boldMatch[1].trim();
+
+    const cleaned = definition.replace(/\*\*/g, '').trim();
+    if (cleaned.includes('. ')) return cleaned.split('. ')[0].trim();
+    return cleaned;
+  }, [word.definition]);
+  const nativeLabel = useMemo(() => {
+    if (isEnglishNative) return '';
+
+    const cleaned = (word.translation || '').replace(/\*\*/g, '').trim();
+    if (!cleaned) return '';
+
+    if (cleaned.includes(';')) return cleaned.split(';')[0].trim();
+    if (cleaned.includes('. ')) return cleaned.split('. ')[0].trim();
+    return cleaned;
+  }, [isEnglishNative, word.translation]);
 
   return (
     <div className="w-full max-w-4xl mx-auto perspective-1000 h-full cursor-pointer group relative" onClick={() => setIsFlipped(!isFlipped)}>
@@ -225,6 +255,23 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
                   </span>
                 )}
               </div>
+              <div className="mt-2 flex flex-col items-center gap-1">
+                {dictPronunciationGuide && (
+                  <p className="text-xs md:text-sm text-slate-400 font-medium">
+                    {dictPronunciationGuide}
+                  </p>
+                )}
+                {englishLabel && (
+                  <p className="text-sm md:text-base text-slate-500 font-medium">
+                    {englishLabel}
+                  </p>
+                )}
+                {nativeLabel && (
+                  <p className={`text-sm md:text-base font-semibold ${word.isLearned ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                    {nativeLabel}
+                  </p>
+                )}
+              </div>
             </div>
 
             {word.exampleSentence && (
@@ -272,6 +319,9 @@ export const Flashcard: React.FC<FlashcardProps> = ({ word, nativeLanguage, onSe
                 <span className="text-lg md:text-xl text-slate-400 font-mono">{word.pronunciation}</span>
                 {word.hanja && <span className="text-lg md:text-xl text-slate-400 font-serif border-l border-slate-300 pl-3">{word.hanja}</span>}
               </div>
+              {dictPronunciationGuide && (
+                <p className="mt-1 text-xs text-slate-400">{dictPronunciationGuide}</p>
+              )}
             </div>
             <div className="flex gap-2.5 items-center shrink-0">
               <button 

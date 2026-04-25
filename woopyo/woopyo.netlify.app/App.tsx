@@ -7,6 +7,15 @@ import { lookupWord, extractTextFromImage, analyzeSentence } from './services/ge
 import { Word, Sentence, Language } from './types';
 import { Search, BookOpen, Plus, Loader2, History, Trash2, Camera, CheckCircle2, Mic, LogOut, Image as ImageIcon, PenLine, Languages, MessageCircle } from 'lucide-react';
 
+type AppNavigationState = {
+  __kvocanoteNav: true;
+  searchMode: 'word' | 'sentence';
+  wordId: string | null;
+  sentenceId: string | null;
+  wordIndex: number;
+  sentenceIndex: number;
+};
+
 const App: React.FC = () => {
   const [userLanguage, setUserLanguage] = useState<Language | null>(null);
   
@@ -29,6 +38,8 @@ const App: React.FC = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const hasInitializedNavHistoryRef = useRef(false);
+  const isSyncingFromPopStateRef = useRef(false);
 
   // Load initial state
   useEffect(() => {
@@ -56,6 +67,105 @@ const App: React.FC = () => {
     localStorage.setItem('words', JSON.stringify(words));
     localStorage.setItem('sentences', JSON.stringify(sentences));
   }, [userLanguage, words, sentences]);
+
+  useEffect(() => {
+    if (!userLanguage || typeof window === 'undefined') return;
+    if (hasInitializedNavHistoryRef.current) return;
+
+    const initialState: AppNavigationState = {
+      __kvocanoteNav: true,
+      searchMode,
+      wordId: words[currentWordIndex]?.id || null,
+      sentenceId: sentences[currentSentenceIndex]?.id || null,
+      wordIndex: currentWordIndex,
+      sentenceIndex: currentSentenceIndex,
+    };
+
+    window.history.replaceState(initialState, '');
+    hasInitializedNavHistoryRef.current = true;
+  }, [userLanguage, searchMode, currentWordIndex, currentSentenceIndex, words, sentences]);
+
+  useEffect(() => {
+    if (!hasInitializedNavHistoryRef.current || typeof window === 'undefined') return;
+
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as AppNavigationState | null;
+      if (!state || state.__kvocanoteNav !== true) return;
+
+      isSyncingFromPopStateRef.current = true;
+
+      setSearchMode(state.searchMode === 'sentence' ? 'sentence' : 'word');
+
+      if (words.length > 0) {
+        let nextWordIndex = -1;
+        if (state.wordId) {
+          nextWordIndex = words.findIndex(w => w.id === state.wordId);
+        }
+        if (nextWordIndex < 0 && Number.isInteger(state.wordIndex)) {
+          nextWordIndex = Math.min(Math.max(state.wordIndex, 0), words.length - 1);
+        }
+        setCurrentWordIndex(nextWordIndex < 0 ? 0 : nextWordIndex);
+      } else {
+        setCurrentWordIndex(-1);
+      }
+
+      if (sentences.length > 0) {
+        let nextSentenceIndex = -1;
+        if (state.sentenceId) {
+          nextSentenceIndex = sentences.findIndex(s => s.id === state.sentenceId);
+        }
+        if (nextSentenceIndex < 0 && Number.isInteger(state.sentenceIndex)) {
+          nextSentenceIndex = Math.min(Math.max(state.sentenceIndex, 0), sentences.length - 1);
+        }
+        setCurrentSentenceIndex(nextSentenceIndex < 0 ? 0 : nextSentenceIndex);
+      } else {
+        setCurrentSentenceIndex(-1);
+      }
+
+      setShowHistory(false);
+      setIsImageMenuOpen(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [words, sentences]);
+
+  useEffect(() => {
+    if (!userLanguage || !hasInitializedNavHistoryRef.current || typeof window === 'undefined') return;
+
+    if (isSyncingFromPopStateRef.current) {
+      isSyncingFromPopStateRef.current = false;
+      return;
+    }
+
+    const hasActiveItem = searchMode === 'word'
+      ? currentWordIndex >= 0 && !!words[currentWordIndex]
+      : currentSentenceIndex >= 0 && !!sentences[currentSentenceIndex];
+
+    if (!hasActiveItem) return;
+
+    const nextState: AppNavigationState = {
+      __kvocanoteNav: true,
+      searchMode,
+      wordId: words[currentWordIndex]?.id || null,
+      sentenceId: sentences[currentSentenceIndex]?.id || null,
+      wordIndex: currentWordIndex,
+      sentenceIndex: currentSentenceIndex,
+    };
+
+    const previousState = window.history.state as AppNavigationState | null;
+    if (
+      previousState &&
+      previousState.__kvocanoteNav === true &&
+      previousState.searchMode === nextState.searchMode &&
+      previousState.wordId === nextState.wordId &&
+      previousState.sentenceId === nextState.sentenceId
+    ) {
+      return;
+    }
+
+    window.history.pushState(nextState, '');
+  }, [userLanguage, searchMode, currentWordIndex, currentSentenceIndex, words, sentences]);
 
   const handleLanguageSelect = (lang: Language) => {
     setUserLanguage(lang);

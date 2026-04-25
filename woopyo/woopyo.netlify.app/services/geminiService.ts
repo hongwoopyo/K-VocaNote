@@ -1,7 +1,7 @@
 import { Word, Sentence } from '../types';
 
 // 환경 변수가 있으면 그걸 쓰고, 없으면 배포 환경인지 확인하여 URL을 설정합니다.
-const BACKEND_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3002/api');
+const BACKEND_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
 
 export const lookupWord = async (
   query: string,

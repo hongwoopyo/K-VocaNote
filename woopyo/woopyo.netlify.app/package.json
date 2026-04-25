@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run build:stable",
+    "build:stable": "npx -y node@22 ./node_modules/typescript/bin/tsc && npx -y node@22 ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,8 +18,8 @@
   "devDependencies": {
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^6.0.1",
     "typescript": "^5.2.2",
-    "vite": "^5.0.8"
+    "vite": "^8.0.8"
   }
 }
