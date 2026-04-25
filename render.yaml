@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: k-vocanote
+    runtime: node
+    rootDir: woopyo/backend
+    plan: free
+    autoDeploy: true
+    buildCommand: npm install && npx -y node@22 render-build.mjs
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: KOREAN_DICT_API_KEY
+        sync: false
